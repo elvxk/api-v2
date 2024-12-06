@@ -19,4 +19,17 @@ export class ProjectsService {
   async create(data: Prisma.ProjectsCreateInput): Promise<Project> {
     return this.prisma.projects.create({ data });
   }
+
+  async deleteById(id: string) {
+    return this.prisma.projects.delete({
+      where: { id },
+    });
+  }
+
+  async updateById(id: string, data: Prisma.ProjectsUpdateInput) {
+    return this.prisma.projects.update({
+      where: { id },
+      data,
+    });
+  }
 }

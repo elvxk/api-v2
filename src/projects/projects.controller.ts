@@ -1,16 +1,21 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpException,
   HttpStatus,
   Post,
+  Put,
   Query,
   Res,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { ProjectsService } from './projects.service';
-import { CreateProjectDto } from './dto/create-projects.dto';
+import { CreateProjectDto } from './dto/create-project.dto';
+import { DeleteProjectDto } from './dto/delete-project.dto';
+import { UpdateProjectDto } from './dto/update-project.dto';
+import { handleError } from 'src/utils/handleError';
 
 @Controller('projects')
 export class ProjectsController {
@@ -45,25 +50,18 @@ export class ProjectsController {
       }
 
       return res.status(HttpStatus.OK).send({
-        statusCode: HttpStatus.OK,
+        code: HttpStatus.OK,
+        status: 'success',
         message: limit
           ? `Success get ${projects.length} projects (limited to ${limit})`
           : 'Success get all projects',
         data: projects,
       });
     } catch (error) {
-      if (error instanceof HttpException) {
-        return res.status(error.getStatus()).send(error.getResponse());
-      }
-
-      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).send({
-        code: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: 'Internal server error',
-        error: error.message || 'Unknown error occurred',
-      });
+      return handleError(error, res);
     }
   }
-  
+
   @Post()
   async create(
     @Body() createProjectDto: CreateProjectDto,
@@ -79,15 +77,51 @@ export class ProjectsController {
         data: newProject,
       });
     } catch (error) {
-      if (error instanceof HttpException) {
-        return res.status(error.getStatus()).send(error.getResponse());
-      }
+      return handleError(error, res);
+    }
+  }
 
-      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).send({
-        code: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: 'Internal server error',
-        error: error.message || 'Unknown error occurred',
+  @Delete()
+  async deleteById(
+    @Body() deleteProjectDto: DeleteProjectDto,
+    @Res() res: Response,
+  ) {
+    try {
+      const deleteProject = await this.projectsService.deleteById(
+        deleteProjectDto.id,
+      );
+      return res.status(HttpStatus.OK).send({
+        code: HttpStatus.OK,
+        status: 'success',
+        message: `Project with ID ${deleteProjectDto.id} successfully deleted`,
+        data: deleteProject,
       });
+    } catch (error) {
+      return handleError(error, res);
+    }
+  }
+
+  @Put()
+  async updateById(
+    @Body() updateProjectDto: UpdateProjectDto,
+    @Res() res: Response,
+  ) {
+    try {
+      const { id, ...updateData } = updateProjectDto;
+
+      const updatedProject = await this.projectsService.updateById(
+        id,
+        updateData,
+      );
+
+      return res.status(HttpStatus.OK).send({
+        code: HttpStatus.OK,
+        status: 'success',
+        message: `Project with ID ${id} successfully updated`,
+        data: updatedProject,
+      });
+    } catch (error) {
+      return handleError(error, res);
     }
   }
 }
