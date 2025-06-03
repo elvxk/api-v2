@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Resolver } from 'dns/promises';
 
 @Injectable()
@@ -10,17 +10,40 @@ export class LookupService {
       const url = new URL(input.startsWith('http') ? input : `http://${input}`);
       return url.hostname.replace(/^www\./, '');
     } catch {
-      return input.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+      return input.replace(/^https?:\/\//, '')
+        .replace(/^www\./, '')
+        .replace(/\/$/, '');
+    }
+  }
+
+  private validateDomain(domain: string) {
+    if (!domain || domain.trim() === '') {
+      throw new BadRequestException('Domain is required.');
+    }
+
+    // Basic domain regex: only letters, numbers, hyphens, dots
+    const domainRegex = /^[a-zA-Z0-9.-]+$/;
+    if (!domainRegex.test(domain)) {
+      throw new BadRequestException('Invalid domain format.');
     }
   }
 
   async lookup(domain: string) {
-    const result: any = { domain };
+    // Bersihkan domain dulu
+    const cleanDomain = this.cleanDomain(domain);
+
+    // Validasi domain setelah dibersihkan
+    this.validateDomain(cleanDomain);
+
+    const result: Record<string, any> = { domain: cleanDomain };
+
     const recordChecks = {
-      ns: await this.resolver.resolveNs(domain).catch(() => null),
-      a: await this.resolver.resolve4(domain).catch(() => null),
-      txt: await this.resolver.resolveTxt(domain).catch(() => null),
-      mx: await this.resolver.resolveMx(domain).catch(() => null),
+      ns: await this.resolver.resolveNs(cleanDomain).catch(() => null),
+      a: await this.resolver.resolve4(cleanDomain).catch(() => null),
+      cname: await this.resolver.resolveCname(cleanDomain).catch(() => null),
+      soa: await this.resolver.resolveSoa(cleanDomain).catch(() => null),
+      txt: await this.resolver.resolveTxt(cleanDomain).catch(() => null),
+      mx: await this.resolver.resolveMx(cleanDomain).catch(() => null),
     };
 
     let hasAnyRecord = false;
@@ -32,6 +55,18 @@ export class LookupService {
 
     if (recordChecks.a?.length) {
       result.a = recordChecks.a;
+      hasAnyRecord = true;
+    }
+
+    if (recordChecks.cname?.length) {
+      result.cname = recordChecks.cname;
+      hasAnyRecord = true;
+    }
+
+    if (recordChecks.soa) {
+      result.soa = Object.entries(recordChecks.soa).map(
+        ([key, value]) => `${key}: ${value}`
+      );
       hasAnyRecord = true;
     }
 
