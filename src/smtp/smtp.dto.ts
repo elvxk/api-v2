@@ -1,4 +1,5 @@
-import { IsEmail, IsNotEmpty, IsNumber, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsEmail, IsIn, IsInt, IsNotEmpty, IsString, Max, Min } from 'class-validator';
 
 export class CheckSmtpDto {
   @IsEmail()
@@ -17,11 +18,12 @@ export class CheckSmtpDto {
   @IsNotEmpty()
   hostname: string;
 
-  @IsNumber()
-  @IsNotEmpty()
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsInt()
+  @Min(1)
+  @Max(65535)
   port: number;
 
-  @IsString()
-  @IsNotEmpty()
-  encryption: string;
+  @IsIn(['ssl', 'tls', 'none'])
+  encryption: 'ssl' | 'tls' | 'none';
 }
