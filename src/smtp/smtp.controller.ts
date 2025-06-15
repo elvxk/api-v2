@@ -6,24 +6,25 @@ import { handleError } from 'src/utils/handleError';
 
 @Controller('smtp')
 export class SmtpController {
-  constructor(private readonly emailService: SmtpService) {}
+  constructor(private readonly emailService: SmtpService) { }
 
   @Post()
   async sendEmail(
     @Body() body: CheckSmtpDto,
     @Res() res: Response,
   ): Promise<Response> {
-    const { senderEmail, password, targetEmail, hostname, port, encryption } =
-      body;
+    // const { senderEmail, password, targetEmail, hostname, port, encryption } =
+    //   body;
 
     try {
       const result = await this.emailService.sendTestEmail(
-        senderEmail,
-        password,
-        targetEmail,
-        hostname,
-        Number(port),
-        encryption,
+        body
+        // senderEmail,
+        // password,
+        // targetEmail,
+        // hostname,
+        // Number(port),
+        // encryption,
       );
 
       return res.status(HttpStatus.OK).send({
