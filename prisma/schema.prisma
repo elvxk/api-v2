@@ -19,3 +19,17 @@ model Projects {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 }
+
+model SSLRequests {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  domains     String[]  // array of domains
+  accountKey  String
+  accountUrl  String
+  orderJson   Json      // simpan object order ACME
+  challenges  Json      // simpan semua challenges [{record, value, authz, challenge}]
+  status      String    @default("pending") // pending | verified | issued | failed
+  certificate String?   // simpan certificate
+  privateKey  String?   // simpan private key
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
