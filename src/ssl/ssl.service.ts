@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import * as acme from 'acme-client'
 import * as dns from 'dns/promises'
-import { PrismaClient } from '@prisma/client'
+import { Prisma, PrismaClient } from '@prisma/client'
 import { randomUUID } from 'crypto'
 
 @Injectable()
@@ -80,7 +80,6 @@ export class SslService {
       id,
       env: process.env.SSL_ENV || 'staging',
       dns: challenges.map(c => ({ type: 'TXT', record: c.record, value: c.value })),
-      message: 'Create ALL TXT records (multiple values allowed), then call /ssl/issue/{id}',
     }
   }
 
@@ -103,8 +102,7 @@ export class SslService {
           return
         }
       } catch (e) {
-        this.log.warn(`DNS lookup failed, retrying`)
-        console.log(e.message)
+        this.log.warn(`DNS lookup failed : ${e.message}`)
       }
 
       await new Promise(r => setTimeout(r, delayMs))
@@ -119,62 +117,81 @@ export class SslService {
   async issueById(id: string) {
     this.log.log(`Issuing certificate for ID=${id}`)
 
-    const data = await this.prisma.sSLRequests.findUnique({ where: { id } })
-    if (!data) throw new Error('Invalid or expired ID')
+    try {
+      const data = await this.prisma.sSLRequests.findUnique({ where: { id } })
 
-    // jika sudah issued
-    if (data.status === 'issued' && data.certificate && data.privateKey) {
-      this.log.log(`Certificate already issued for ${data.domains.join(', ')}`)
+      if (!data) {
+        throw new Error('Invalid or expired ID')
+      }
+
+      // jika sudah issued
+      if (data.status === 'issued' && data.certificate && data.privateKey) {
+        this.log.log(`Certificate already issued for ${data.domains.join(', ')}`)
+        return {
+          domains: data.domains,
+          certificate: data.certificate,
+          privateKey: data.privateKey,
+        }
+      }
+
+      const client = new acme.Client({
+        directoryUrl: this.directory(),
+        accountKey: data.accountKey,
+        accountUrl: data.accountUrl,
+      })
+
+      // tunggu semua DNS
+      for (const item of data.challenges as any[]) {
+        await this.waitForDns(item.record, item.value)
+      }
+
+      // verify semua challenge
+      for (const item of data.challenges as any[]) {
+        await client.verifyChallenge(item.authz, item.challenge)
+        await client.completeChallenge(item.challenge)
+        await client.waitForValidStatus(item.authz)
+      }
+
+      const [key, csr] = await acme.crypto.createCsr({
+        altNames: data.domains,
+      })
+
+      const order: acme.Order = JSON.parse(data.orderJson as string)
+      await client.finalizeOrder(order, csr)
+      const cert = await client.getCertificate(order)
+
+      // update status issued & simpan certificate + private key
+      await this.prisma.sSLRequests.update({
+        where: { id },
+        data: {
+          status: 'issued',
+          certificate: cert,
+          privateKey: key.toString(),
+        },
+      })
+
+      this.log.log(`Certificate issued for ${data.domains.join(', ')}`)
+
       return {
         domains: data.domains,
-        certificate: data.certificate,
-        privateKey: data.privateKey,
-        message: 'Certificate was already issued',
-      }
-    }
-
-    const client = new acme.Client({
-      directoryUrl: this.directory(),
-      accountKey: data.accountKey,
-      accountUrl: data.accountUrl,
-    })
-
-    // tunggu semua DNS
-    for (const item of data.challenges as any[]) {
-      await this.waitForDns(item.record, item.value)
-    }
-
-    // verify semua challenge
-    for (const item of data.challenges as any[]) {
-      await client.verifyChallenge(item.authz, item.challenge)
-      await client.completeChallenge(item.challenge)
-      await client.waitForValidStatus(item.authz)
-    }
-
-    const [key, csr] = await acme.crypto.createCsr({
-      altNames: data.domains,
-    })
-
-    const order: acme.Order = JSON.parse(data.orderJson as string)
-    await client.finalizeOrder(order, csr)
-    const cert = await client.getCertificate(order)
-
-    // update status issued & simpan certificate + private key
-    await this.prisma.sSLRequests.update({
-      where: { id },
-      data: {
-        status: 'issued',
         certificate: cert,
         privateKey: key.toString(),
-      },
-    })
+      }
 
-    this.log.log(`Certificate issued for ${data.domains.join(', ')}`)
+    } catch (err: any) {
+      // === Handle Prisma / database errors ===
+      if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        // misal invalid UUID, duplicate key, constraint error, dll
+        throw new Error('Invalid or expired ID')
+      }
 
-    return {
-      domains: data.domains,
-      certificate: cert,
-      privateKey: key.toString(),
+      // Jika UUID invalid (format salah)
+      if (err.message.includes('invalid group length')) {
+        throw new Error('Invalid ID format')
+      }
+
+      // error lainnya diteruskan
+      throw err
     }
   }
 }

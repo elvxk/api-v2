@@ -20,6 +20,25 @@ export function handleError(error: any, res: Response): Response {
     });
   }
 
+  // ACME / Let's Encrypt invalid domain
+  if (typeof error.message === 'string' && error.message.includes('Invalid identifiers requested')) {
+    return res.status(HttpStatus.BAD_REQUEST).send({
+      code: HttpStatus.BAD_REQUEST,
+      status: 'error',
+      message: 'Invalid domain(s) provided. Domain must end with a valid public suffix (TLD).',
+      error: `Invalid input query.`,
+    });
+  }
+
+  if (typeof error.message === 'string' && error.message.includes('DNS TXT not propagated')) {
+    return res.status(HttpStatus.CONFLICT).json({
+      code: HttpStatus.CONFLICT,
+      status: 'error',
+      message: error.message,
+      error: 'Valid request but conflict',
+    });
+  }
+
   return res.status(HttpStatus.INTERNAL_SERVER_ERROR).send({
     code: HttpStatus.INTERNAL_SERVER_ERROR,
     status: 'error',
